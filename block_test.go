@@ -29,7 +29,10 @@ func TestBlockDecoding(t *testing.T) {
 	var uncompressed = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolor"
 
 	out := make([]byte, 1024)
-	n := Decompress(compressed, out)
+	n, err := Decompress(compressed, out)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(out[:n]) != uncompressed {
 		t.Errorf(
 			"Uncompressed content not match expectations\nExpected\n'%s'\nHave\n'%s\n",

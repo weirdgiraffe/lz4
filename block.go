@@ -7,30 +7,35 @@
 
 package lz4
 
-import "log"
+import (
+	"fmt"
+)
 
-func Decompress(in []byte, out []byte) int {
+func Decompress(in []byte, out []byte) (int, error) {
 	token := in[0]
-	i := 1 // token took position 0
+	i := 1 // token has taken position 0
 
 	literals := seqLen(token>>4, in[i:])
+	if len(out) < literals {
+		return 0, fmt.Errorf("output buffer is to small")
+	}
 	i += seqLenAdditionalConsumed(literals)
-	log.Printf("literals: %d", literals)
 
-	copy(out, in[i:i+literals])
-	i += literals
+	i += copy(out, in[i:i+literals])
 
 	offt := int(in[i]) | int(in[i+1])<<8
+	if literals-offt < 0 {
+		return i, fmt.Errorf("offset must be inside literals")
+	}
 	i += 2
-	log.Printf("offset: %d", offt)
 
-	match := seqLen(token&0xf, in[i:])
-	i += seqLenAdditionalConsumed(match)
-	match += 4 // minmatch is 4
-	log.Printf("match: %d", match)
+	match := seqLen(token&0xf, in[i:]) + 4 // additional 4 bytes - minmatch
+	if len(out) < literals+match {
+		return 0, fmt.Errorf("output buffer is to small")
+	}
+	i += seqLenAdditionalConsumed(match - 4)
 
-	copy(out[literals:], out[literals-offt:literals-offt+match])
-	return literals + match
+	return literals + copy(out[literals:], out[literals-offt:literals-offt+match]), nil
 }
 
 func seqLenAdditionalConsumed(l int) int {
