@@ -7,7 +7,10 @@
 
 package lz4
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 var testLoremLZ4 = []byte{
 	0x04, 0x22, 0x4d, 0x18, // magic
@@ -63,6 +66,26 @@ func TestDecompressBlock(t *testing.T) {
 			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
 			testLoremTXT,
 			string(out),
+		)
+	}
+}
+
+func TestDecompress(t *testing.T) {
+	r := bytes.NewReader(testLoremLZ4)
+	w := new(bytes.Buffer)
+	d := NewDecompressor(r)
+	err := d.Decompress(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Len() != len(testLoremTXT) {
+		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), w.Len())
+	}
+	if w.String() != testLoremTXT {
+		t.Errorf(
+			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
+			testLoremTXT,
+			w.String(),
 		)
 	}
 }
