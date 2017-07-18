@@ -8,10 +8,8 @@
 package lz4
 
 import (
-	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/OneOfOne/xxhash"
 )
@@ -48,21 +46,16 @@ type FrameDesc struct {
 }
 
 const (
-	lzFLGByte = 4
-	lzBDByte  = 5
-
-	lzMaxFrameDescLen = 13
+	lzFLGByte         = 0
+	lzBDByte          = 1
+	lzMaxFrameDescLen = 11
 )
 
 func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 	var b [lzMaxFrameDescLen]byte
 	// read magic + FLG byte + BD byte + (HC byte or first byte of ContentSize)
-	err = read(d.r, b[:7])
+	err = read(d.r, b[:3])
 	if err != nil {
-		return
-	}
-	if leUint32(b[:4]) != lz4Magic {
-		err = fmt.Errorf("FrameDesc: magic not match")
 		return
 	}
 	// check version is 01
@@ -102,9 +95,7 @@ func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 		i += 8
 	}
 	// HC byte
-	log.Println(hex.EncodeToString(b[:i+1]))
 	hChecksum := byte((xxhash.Checksum32(b[:i]) >> 8) & 0xff)
-	log.Printf("checksum: %02x", hChecksum)
 	if hChecksum != b[i] {
 		err = fmt.Errorf("FrameDesc: checksum mismatch")
 		return
@@ -132,6 +123,13 @@ func (d *Decompressor) readBlock(block []byte) (err error) {
 }
 
 func (d *Decompressor) Decompress(w io.Writer) (err error) {
+	var magic uint32
+	magic, err = d.readUint32()
+	if magic != lz4Magic {
+		err = fmt.Errorf("Decompress: Frame magic not match")
+		return
+	}
+
 	if d.desc == nil {
 		d.desc, err = d.readFrameDesc()
 		if err != nil {
