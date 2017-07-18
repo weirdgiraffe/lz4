@@ -24,17 +24,13 @@ const (
 )
 
 type Decompressor struct {
-	r    io.Reader
-	desc *FrameDesc
+	r io.Reader
 
-	buf32 [4]byte
-	buf64 [8]byte
+	buf [8]byte
 }
 
-func NewDecompressor(r io.Reader) *Decompressor {
-	return &Decompressor{
-		r: r,
-	}
+func NewDecompressor() *Decompressor {
+	return &Decompressor{}
 }
 
 type FrameDesc struct {
@@ -110,19 +106,15 @@ func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 }
 
 func (d *Decompressor) readBlock(block []byte) (err error) {
-	var n int
-	n, err = d.r.Read(block)
+	err = read(d.r, block)
 	if err != nil {
-		return
-	}
-	if n != len(block) {
-		err = fmt.Errorf("DecompressFrame: schrinked read")
 		return
 	}
 	return nil
 }
 
-func (d *Decompressor) Decompress(w io.Writer) (err error) {
+func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
+	d.r = r
 	var magic uint32
 	magic, err = d.readUint32()
 	if magic != lz4Magic {
@@ -130,25 +122,24 @@ func (d *Decompressor) Decompress(w io.Writer) (err error) {
 		return
 	}
 
-	if d.desc == nil {
-		d.desc, err = d.readFrameDesc()
-		if err != nil {
-			return
-		}
+	var desc *FrameDesc
+	desc, err = d.readFrameDesc()
+	if err != nil {
+		return
 	}
 
-	in := make([]byte, d.desc.BlockMaxSize)
-	out := make([]byte, d.desc.BlockMaxSize)
+	in := make([]byte, desc.BlockMaxSize)
+	out := make([]byte, desc.BlockMaxSize)
 
 	var cMust *xxhash.XXHash32
-	if d.desc.HasContentChecksum {
-		cMust := xxhash.New32()
-		cMust.Reset()
+	if desc.HasContentChecksum {
+		cMust = xxhash.New32()
 	}
+
 	var bLen, n int
 	var compressed bool
 	for {
-		bLen, compressed, err = d.readBlockLen()
+		bLen, compressed, err = d.readBlockLen(desc.BlockMaxSize)
 		if err != nil {
 			return
 		}
@@ -159,7 +150,8 @@ func (d *Decompressor) Decompress(w io.Writer) (err error) {
 		if err != nil {
 			return
 		}
-		if d.desc.HasBlockChecksum {
+
+		if desc.HasBlockChecksum {
 			var bChecksum uint32
 			bChecksum, err = d.readUint32()
 			if err != nil {
@@ -181,8 +173,11 @@ func (d *Decompressor) Decompress(w io.Writer) (err error) {
 			n = copy(out, in[:bLen])
 		}
 
-		if d.desc.HasContentChecksum {
-			cMust.Write(out[:n])
+		if desc.HasContentChecksum {
+			_, err = cMust.Write(out[:n])
+			if err != nil {
+				return err
+			}
 		}
 
 		err = write(w, out[:n])
@@ -190,34 +185,36 @@ func (d *Decompressor) Decompress(w io.Writer) (err error) {
 			return
 		}
 	}
-	if d.desc.HasContentChecksum {
+
+	if desc.HasContentChecksum {
 		var cChecksum uint32
 		cChecksum, err = d.readUint32()
 		if err != nil {
 			return err
 		}
 		if cChecksum != cMust.Sum32() {
-			err = fmt.Errorf("DecodeFrame: Conten checksum mismatch")
+			err = fmt.Errorf("DecodeFrame: Content checksum mismatch")
 			return
 		}
 	}
+
 	return nil
 }
 
 func (d *Decompressor) readUint64() (uint64, error) {
-	err := read(d.r, d.buf64[:8])
+	err := read(d.r, d.buf[:8])
 	if err != nil {
 		return 0, err
 	}
-	return leUint64(d.buf64[:8]), nil
+	return leUint64(d.buf[:8]), nil
 }
 
 func (d *Decompressor) readUint32() (uint32, error) {
-	err := read(d.r, d.buf64[:4])
+	err := read(d.r, d.buf[:4])
 	if err != nil {
 		return 0, err
 	}
-	return leUint32(d.buf64[:4]), nil
+	return leUint32(d.buf[:4]), nil
 }
 
 func read(r io.Reader, b []byte) error {
@@ -242,14 +239,14 @@ func write(w io.Writer, b []byte) error {
 	return err
 }
 
-func (d *Decompressor) readBlockLen() (len int, compressed bool, err error) {
+func (d *Decompressor) readBlockLen(maxLen int) (len int, compressed bool, err error) {
 	ulen, err := d.readUint32()
 	if err != nil {
 		return
 	}
-	compressed = ulen&0x80000000 != 0
+	compressed = (ulen & 0x80000000) == 0
 	len = int(ulen & 0x7fffffff)
-	if len > d.desc.BlockMaxSize {
+	if len > maxLen {
 		err = fmt.Errorf("DecompressFrame: malformed block size")
 		return
 	}

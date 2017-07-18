@@ -9,6 +9,7 @@ package lz4
 
 import (
 	"bytes"
+	"io/ioutil"
 	"testing"
 )
 
@@ -73,8 +74,8 @@ func TestDecompressBlock(t *testing.T) {
 func TestDecompress(t *testing.T) {
 	r := bytes.NewReader(testLoremLZ4)
 	w := new(bytes.Buffer)
-	d := NewDecompressor(r)
-	err := d.Decompress(w)
+	d := NewDecompressor()
+	err := d.Decompress(r, w)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +88,17 @@ func TestDecompress(t *testing.T) {
 			testLoremTXT,
 			w.String(),
 		)
+	}
+}
+
+func BenchmarkDecompress(b *testing.B) {
+	d := NewDecompressor()
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(testLoremLZ4)
+		err := d.Decompress(r, ioutil.Discard)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
