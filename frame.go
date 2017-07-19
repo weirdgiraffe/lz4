@@ -64,17 +64,8 @@ func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 		err = fmt.Errorf("FrameDesc: reserved bits must be zero")
 		return
 	}
-	var bSize int
-	switch b[lzBDByte] & 0x70 >> 4 {
-	case 4:
-		bSize = lz64KB
-	case 5:
-		bSize = lz256KB
-	case 6:
-		bSize = lz1MB
-	case 7:
-		bSize = lz4MB
-	default:
+	bSize := lzBlockMaxSize(b[lzBDByte])
+	if bSize == -1 {
 		err = fmt.Errorf("FrameDesc: unsupported Block Maximum size")
 		return
 	}
@@ -251,6 +242,20 @@ func (d *Decompressor) readBlockLen(maxLen int) (len int, compressed bool, err e
 		return
 	}
 	return len, compressed, nil
+}
+func lzBlockMaxSize(BD byte) int {
+	switch BD & 0x70 >> 4 {
+	case 4:
+		return lz64KB
+	case 5:
+		return lz256KB
+	case 6:
+		return lz1MB
+	case 7:
+		return lz4MB
+	default:
+		return -1
+	}
 }
 
 func leUint32(b []byte) uint32 {
