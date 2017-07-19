@@ -1,5 +1,5 @@
 //
-// frame_test.go
+// desc_test.go
 // Copyright (C) 2017 weirdgiraffe <giraffe@cyberzoo.xyz>
 //
 // Distributed under terms of the MIT license.
@@ -96,7 +96,7 @@ func TestReadFrameHeader(t *testing.T) {
 	}
 	for i := range tc {
 		r := bytes.NewReader(tc[i].b)
-		f, err := readFrameDesc(r)
+		f, err := ReadFrameDesc(r)
 		if err != nil {
 			if !tc[i].eErr {
 				t.Fatalf(

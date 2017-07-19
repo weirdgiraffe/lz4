@@ -11,8 +11,6 @@ import (
 	"fmt"
 )
 
-const MaxInt = int(^uint(0) >> 1)
-
 func DecompressBlock(in []byte, out []byte) (int, error) {
 	var literals, matchLen, matchOfft, i, j, n int
 	for i < len(in) {

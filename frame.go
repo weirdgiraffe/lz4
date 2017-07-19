@@ -14,14 +14,7 @@ import (
 	"github.com/OneOfOne/xxhash"
 )
 
-const lz4Magic uint32 = 0x184d2204
-
-const (
-	lz64KB  = 65536
-	lz256KB = 262144
-	lz1MB   = 1048576
-	lz4MB   = 4194304
-)
+const lzMagic uint32 = 0x184d2204
 
 type Decompressor struct {
 	r io.Reader
@@ -31,72 +24,6 @@ type Decompressor struct {
 
 func NewDecompressor() *Decompressor {
 	return &Decompressor{}
-}
-
-type FrameDesc struct {
-	Independent        bool
-	HasBlockChecksum   bool
-	HasContentChecksum bool
-	BlockMaxSize       int
-	ContentSize        uint64
-}
-
-const (
-	lzFLGByte         = 0
-	lzBDByte          = 1
-	lzMaxFrameDescLen = 11
-)
-
-func readFrameDesc(r io.Reader) (f *FrameDesc, err error) {
-	var b [lzMaxFrameDescLen]byte
-	// read FLG byte + BD byte + (HC byte or first byte of ContentSize)
-	err = read(r, b[:3])
-	if err != nil {
-		return
-	}
-	// check version is 01
-	if b[lzFLGByte]&0xc0 != 0x40 {
-		err = fmt.Errorf("FrameDesc: version must be 01")
-		return
-	}
-	// check reserved bits are 0
-	if b[lzFLGByte]&0x03 != 0 && b[lzBDByte]&0x8f != 0 {
-		err = fmt.Errorf("FrameDesc: reserved bits must be zero")
-		return
-	}
-	bSize := lzBlockMaxSize(b[lzBDByte] & 0x70 >> 4)
-	if bSize == -1 {
-		err = fmt.Errorf("FrameDesc: unsupported Block Maximum size")
-		return
-	}
-	// optional ContentSize field
-	var contentSize uint64
-	i := lzBDByte + 1
-	if b[lzFLGByte]&0x08 != 0 {
-		// first ContentSize byte is already in b, read rest + HC byte
-		err = read(r, b[i+1:i+9])
-		if err != nil {
-			return
-		}
-		contentSize = leUint64(b[i : i+8])
-		i += 8
-	}
-	// HC byte
-	hChecksum := byte((xxhash.Checksum32(b[:i]) >> 8) & 0xff)
-	if hChecksum != b[i] {
-		err = fmt.Errorf(
-			"FrameDesc: checksum mismatch %02x != %02x",
-			hChecksum, b[i],
-		)
-		return
-	}
-	return &FrameDesc{
-		Independent:        b[lzFLGByte]&0x20 != 0,
-		HasBlockChecksum:   b[lzFLGByte]&0x10 != 0,
-		HasContentChecksum: b[lzFLGByte]&0x04 != 0,
-		BlockMaxSize:       bSize,
-		ContentSize:        contentSize,
-	}, nil
 }
 
 func (d *Decompressor) readBlock(block []byte) (err error) {
@@ -111,13 +38,13 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 	d.r = r
 	var magic uint32
 	magic, err = d.readUint32()
-	if magic != lz4Magic {
+	if magic != lzMagic {
 		err = fmt.Errorf("Decompress: Frame magic not match")
 		return
 	}
 
 	var desc *FrameDesc
-	desc, err = readFrameDesc(d.r)
+	desc, err = ReadFrameDesc(d.r)
 	if err != nil {
 		return
 	}
@@ -245,37 +172,4 @@ func (d *Decompressor) readBlockLen(maxLen int) (len int, compressed bool, err e
 		return
 	}
 	return len, compressed, nil
-}
-
-func lzBlockMaxSize(b byte) int {
-	switch b {
-	case 4:
-		return lz64KB
-	case 5:
-		return lz256KB
-	case 6:
-		return lz1MB
-	case 7:
-		return lz4MB
-	default:
-		return -1
-	}
-}
-
-func leUint32(b []byte) uint32 {
-	return uint32(b[0]) |
-		uint32(b[1])<<8 |
-		uint32(b[2])<<16 |
-		uint32(b[3])<<24
-}
-
-func leUint64(b []byte) uint64 {
-	return uint64(b[0]) |
-		uint64(b[1])<<8 |
-		uint64(b[2])<<16 |
-		uint64(b[3])<<24 |
-		uint64(b[4])<<32 |
-		uint64(b[5])<<40 |
-		uint64(b[6])<<48 |
-		uint64(b[7])<<52
 }
