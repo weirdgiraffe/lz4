@@ -47,10 +47,10 @@ const (
 	lzMaxFrameDescLen = 11
 )
 
-func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
+func readFrameDesc(r io.Reader) (f *FrameDesc, err error) {
 	var b [lzMaxFrameDescLen]byte
-	// read magic + FLG byte + BD byte + (HC byte or first byte of ContentSize)
-	err = read(d.r, b[:3])
+	// read FLG byte + BD byte + (HC byte or first byte of ContentSize)
+	err = read(r, b[:3])
 	if err != nil {
 		return
 	}
@@ -64,7 +64,7 @@ func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 		err = fmt.Errorf("FrameDesc: reserved bits must be zero")
 		return
 	}
-	bSize := lzBlockMaxSize(b[lzBDByte])
+	bSize := lzBlockMaxSize(b[lzBDByte] & 0x70 >> 4)
 	if bSize == -1 {
 		err = fmt.Errorf("FrameDesc: unsupported Block Maximum size")
 		return
@@ -74,7 +74,7 @@ func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 	i := lzBDByte + 1
 	if b[lzFLGByte]&0x08 != 0 {
 		// first ContentSize byte is already in b, read rest + HC byte
-		err = read(d.r, b[i+1:i+9])
+		err = read(r, b[i+1:i+9])
 		if err != nil {
 			return
 		}
@@ -84,13 +84,16 @@ func (d *Decompressor) readFrameDesc() (f *FrameDesc, err error) {
 	// HC byte
 	hChecksum := byte((xxhash.Checksum32(b[:i]) >> 8) & 0xff)
 	if hChecksum != b[i] {
-		err = fmt.Errorf("FrameDesc: checksum mismatch")
+		err = fmt.Errorf(
+			"FrameDesc: checksum mismatch %02x != %02x",
+			hChecksum, b[i],
+		)
 		return
 	}
 	return &FrameDesc{
 		Independent:        b[lzFLGByte]&0x20 != 0,
 		HasBlockChecksum:   b[lzFLGByte]&0x10 != 0,
-		HasContentChecksum: b[lzFLGByte]&0x40 != 0,
+		HasContentChecksum: b[lzFLGByte]&0x04 != 0,
 		BlockMaxSize:       bSize,
 		ContentSize:        contentSize,
 	}, nil
@@ -114,7 +117,7 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 	}
 
 	var desc *FrameDesc
-	desc, err = d.readFrameDesc()
+	desc, err = readFrameDesc(d.r)
 	if err != nil {
 		return
 	}
@@ -214,7 +217,7 @@ func read(r io.Reader, b []byte) error {
 		return err
 	}
 	if n != len(b) {
-		return fmt.Errorf("Decomressor: schrinked read")
+		return fmt.Errorf("Could not read enough data (need %d) got EOF", len(b))
 	}
 	return err
 }
@@ -243,8 +246,9 @@ func (d *Decompressor) readBlockLen(maxLen int) (len int, compressed bool, err e
 	}
 	return len, compressed, nil
 }
-func lzBlockMaxSize(BD byte) int {
-	switch BD & 0x70 >> 4 {
+
+func lzBlockMaxSize(b byte) int {
+	switch b {
 	case 4:
 		return lz64KB
 	case 5:
