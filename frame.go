@@ -26,18 +26,10 @@ func NewDecompressor() *Decompressor {
 	return &Decompressor{}
 }
 
-func (d *Decompressor) readBlock(block []byte) (err error) {
-	err = read(d.r, block)
-	if err != nil {
-		return
-	}
-	return nil
-}
-
 func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 	d.r = r
 	var magic uint32
-	magic, err = d.readUint32()
+	magic, err = readUint32(d.r, d.buf[:])
 	if magic != lzMagic {
 		err = fmt.Errorf("Decompress: Frame magic not match")
 		return
@@ -67,14 +59,13 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 		if bLen == 0 { // EndMark
 			break
 		}
-		err = d.readBlock(in[:bLen])
+		err = read(d.r, in[:bLen])
 		if err != nil {
 			return
 		}
-
 		if desc.HasBlockChecksum {
 			var bChecksum uint32
-			bChecksum, err = d.readUint32()
+			bChecksum, err = readUint32(d.r, d.buf[:])
 			if err != nil {
 				return
 			}
@@ -84,7 +75,6 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 				return
 			}
 		}
-
 		if compressed {
 			n, err = DecompressBlock(in[:bLen], out)
 			if err != nil {
@@ -93,14 +83,12 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 		} else {
 			n = copy(out, in[:bLen])
 		}
-
 		if desc.HasContentChecksum {
 			_, err = cMust.Write(out[:n])
 			if err != nil {
 				return err
 			}
 		}
-
 		err = write(w, out[:n])
 		if err != nil {
 			return
@@ -109,7 +97,7 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 
 	if desc.HasContentChecksum {
 		var cChecksum uint32
-		cChecksum, err = d.readUint32()
+		cChecksum, err = readUint32(d.r, d.buf[:])
 		if err != nil {
 			return err
 		}
@@ -122,46 +110,8 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 	return nil
 }
 
-func (d *Decompressor) readUint64() (uint64, error) {
-	err := read(d.r, d.buf[:8])
-	if err != nil {
-		return 0, err
-	}
-	return leUint64(d.buf[:8]), nil
-}
-
-func (d *Decompressor) readUint32() (uint32, error) {
-	err := read(d.r, d.buf[:4])
-	if err != nil {
-		return 0, err
-	}
-	return leUint32(d.buf[:4]), nil
-}
-
-func read(r io.Reader, b []byte) error {
-	n, err := r.Read(b)
-	if err != nil {
-		return err
-	}
-	if n != len(b) {
-		return fmt.Errorf("Could not read enough data (need %d) got EOF", len(b))
-	}
-	return err
-}
-
-func write(w io.Writer, b []byte) error {
-	n, err := w.Write(b)
-	if err != nil {
-		return err
-	}
-	if n != len(b) {
-		return fmt.Errorf("Decomressor: schrinked write")
-	}
-	return err
-}
-
 func (d *Decompressor) readBlockLen(maxLen int) (len int, compressed bool, err error) {
-	ulen, err := d.readUint32()
+	ulen, err := readUint32(d.r, d.buf[:])
 	if err != nil {
 		return
 	}
