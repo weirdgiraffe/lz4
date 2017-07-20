@@ -8,8 +8,10 @@
 package lz4
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/OneOfOne/xxhash"
 )
@@ -41,6 +43,9 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 		return
 	}
 
+	jb, _ := json.MarshalIndent(desc, "", "  ")
+	fmt.Fprintln(os.Stderr, string(jb))
+
 	in := make([]byte, desc.BlockMaxSize)
 	out := make([]byte, desc.BlockMaxSize)
 
@@ -51,11 +56,13 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 
 	var bLen, n int
 	var compressed bool
+	decoder := NewBlockDecoder(in, out)
 	for {
 		bLen, compressed, err = d.readBlockLen(desc.BlockMaxSize)
 		if err != nil {
 			return
 		}
+		fmt.Fprintf(os.Stderr, "Block Len: %d, compressed: %v\n", bLen, compressed)
 		if bLen == 0 { // EndMark
 			break
 		}
@@ -76,7 +83,7 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 			}
 		}
 		if compressed {
-			n, err = DecompressBlock(in[:bLen], out)
+			n, err = decoder.DecompressBlock(bLen)
 			if err != nil {
 				return
 			}
@@ -84,6 +91,7 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 			n = copy(out, in[:bLen])
 		}
 		if desc.HasContentChecksum {
+			fmt.Fprintf(os.Stderr, "count: %d\n%s\n", n, out[n-50:n])
 			_, err = cMust.Write(out[:n])
 			if err != nil {
 				return err
@@ -94,7 +102,6 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 			return
 		}
 	}
-
 	if desc.HasContentChecksum {
 		var cChecksum uint32
 		cChecksum, err = readUint32(d.r, d.buf[:])
@@ -102,7 +109,9 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 			return err
 		}
 		if cChecksum != cMust.Sum32() {
-			err = fmt.Errorf("DecodeFrame: Content checksum mismatch")
+			err = fmt.Errorf(
+				"DecodeFrame: Content checksum mismatch %04x != %04x",
+				cMust.Sum32(), cChecksum)
 			return
 		}
 	}

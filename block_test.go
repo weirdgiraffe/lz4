@@ -10,6 +10,7 @@ package lz4
 import (
 	"bytes"
 	"io/ioutil"
+	"os"
 	"testing"
 )
 
@@ -91,6 +92,24 @@ func TestDecompress(t *testing.T) {
 	}
 }
 
+func TestDecompressMultiblock(t *testing.T) {
+	f, err := os.Open("war-and-peace.txt.lz4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f2, err := os.Create("war-and-peace2.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f2.Close()
+	d := NewDecompressor()
+	err = d.Decompress(f, f2)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkDecompress(b *testing.B) {
 	d := NewDecompressor()
 	for i := 0; i < b.N; i++ {
@@ -103,9 +122,13 @@ func BenchmarkDecompress(b *testing.B) {
 }
 
 func BenchmarkDecompressBlock(b *testing.B) {
-	var block = testLoremLZ4[11:432]
 	out := make([]byte, len(testLoremTXT))
+	d := NewBlockDecoder(testLoremLZ4[11:432], out)
 	for i := 0; i < b.N; i++ {
-		DecompressBlock(block, out)
+		_, err := d.DecompressBlock(421)
+		if err != nil {
+			b.Fatal(err)
+		}
+		d.Reset()
 	}
 }
