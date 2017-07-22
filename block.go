@@ -8,15 +8,12 @@
 package lz4
 
 import (
-	"encoding/hex"
 	"fmt"
-	"os"
 )
 
 func DecompressBlock(in []byte, out []byte) (int, error) {
 	var literals, matchLen, matchOfft, i, j, n int
 	for i < len(in) {
-		jinitial := j
 		literals = int(in[i] >> 4)
 		matchLen = int(in[i] & 0xf)
 		i++
@@ -70,8 +67,6 @@ func DecompressBlock(in []byte, out []byte) (int, error) {
 			return -1, fmt.Errorf("DecompressBlock: could not copy match - small buffer")
 		}
 		j += matchLen
-		fmt.Fprintf(os.Stderr, "From %d to %d\n", jinitial, j)
-		fmt.Fprintln(os.Stderr, hex.Dump(out[jinitial:j]))
 	}
 	return j, nil
 }
@@ -103,6 +98,7 @@ func (d *BlockDecoder) DecompressBlock(blockLen int) (n int, err error) {
 }
 
 func (d *BlockDecoder) DecodeSequence(blockLen int) error {
+	var n int
 	// jinitial := d.j
 	// log.Printf("token: %02x", d.in[d.i])
 	lLen := int(d.in[d.i] >> 4)
@@ -122,7 +118,7 @@ func (d *BlockDecoder) DecodeSequence(blockLen int) error {
 	}
 	// log.Printf("copy %d literals", lLen)
 	if lLen != 0 {
-		n := copy(d.out[d.j:], d.in[d.i:d.i+lLen])
+		n = copy(d.out[d.j:], d.in[d.i:d.i+lLen])
 		if n != lLen {
 			return fmt.Errorf("DecompressSequence: buffer is too small")
 		}
@@ -156,7 +152,7 @@ func (d *BlockDecoder) DecodeSequence(blockLen int) error {
 	}
 	for mOfft < mLen {
 		// log.Printf("match copy %d literals at offt %d partial", mOfft, mOfft)
-		n := copy(d.out[d.j:], d.out[d.j-mOfft:d.j])
+		n = copy(d.out[d.j:], d.out[d.j-mOfft:d.j])
 		if n != mOfft {
 			return fmt.Errorf("DecompressSequence: buffer is too small")
 		}
@@ -164,7 +160,7 @@ func (d *BlockDecoder) DecodeSequence(blockLen int) error {
 		d.j += n
 	}
 	// log.Printf("match copy %d literals at offt %d", mLen, mOfft)
-	n := copy(d.out[d.j:], d.out[d.j-mOfft:d.j-mOfft+mLen])
+	n = copy(d.out[d.j:], d.out[d.j-mOfft:d.j-mOfft+mLen])
 	if n != mLen {
 		return fmt.Errorf("DecompressSequence: buffer is too small")
 	}

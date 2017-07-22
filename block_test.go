@@ -72,6 +72,26 @@ func TestDecompressBlock(t *testing.T) {
 	}
 }
 
+func TestDecompressBlockNew(t *testing.T) {
+	var block = testLoremLZ4[11:432]
+	out := make([]byte, len(testLoremTXT))
+	d := NewBlockDecoder(block, out)
+	n, err := d.DecompressBlock(len(block))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(testLoremTXT) {
+		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), n)
+	}
+	if string(out) != testLoremTXT {
+		t.Errorf(
+			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
+			testLoremTXT,
+			string(out),
+		)
+	}
+}
+
 func TestDecompress(t *testing.T) {
 	r := bytes.NewReader(testLoremLZ4)
 	w := new(bytes.Buffer)
@@ -122,6 +142,17 @@ func BenchmarkDecompress(b *testing.B) {
 }
 
 func BenchmarkDecompressBlock(b *testing.B) {
+	var block = testLoremLZ4[11:432]
+	out := make([]byte, len(testLoremTXT))
+	for i := 0; i < b.N; i++ {
+		_, err := DecompressBlock(block, out)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecompressBlockNew(b *testing.B) {
 	out := make([]byte, len(testLoremTXT))
 	d := NewBlockDecoder(testLoremLZ4[11:432], out)
 	for i := 0; i < b.N; i++ {
