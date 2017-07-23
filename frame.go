@@ -56,7 +56,6 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 
 	var bLen, n int
 	var compressed bool
-	decoder := NewBlockDecoder(in, out)
 	for {
 		bLen, compressed, err = d.readBlockLen(desc.BlockMaxSize)
 		if err != nil {
@@ -83,7 +82,7 @@ func (d *Decompressor) Decompress(r io.Reader, w io.Writer) (err error) {
 			}
 		}
 		if compressed {
-			n, err = decoder.DecompressBlock(bLen)
+			n, err = DecompressBlock2(in[:bLen], out)
 			if err != nil {
 				return
 			}

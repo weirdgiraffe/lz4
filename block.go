@@ -28,7 +28,6 @@ func DecompressBlock(in []byte, out []byte) (int, error) {
 			literals += int(in[i])
 			i++
 		}
-		//fmt.Fprintf(os.Stderr, "Seq literals: %d\n", literals)
 		if literals != 0 {
 			n = copy(out[j:], in[i:i+literals])
 			if n != literals {
@@ -61,7 +60,6 @@ func DecompressBlock(in []byte, out []byte) (int, error) {
 			i++
 		}
 		matchLen += 4 // additional 4 bytes - minmatch
-		//fmt.Fprintf(os.Stderr, "Seq match: %d\n", matchLen)
 		n = copy(out[j:], out[j-matchOfft:j-matchOfft+matchLen])
 		if n != matchLen {
 			return -1, fmt.Errorf("DecompressBlock: could not copy match - small buffer")
@@ -71,100 +69,65 @@ func DecompressBlock(in []byte, out []byte) (int, error) {
 	return j, nil
 }
 
-type BlockDecoder struct {
-	i, j       int
-	in, out    []byte
-	endOfBlock bool
+type InvalidInput struct {
+	desc string
 }
 
-func NewBlockDecoder(in, out []byte) *BlockDecoder {
-	return &BlockDecoder{in: in, out: out}
+func (e InvalidInput) Error() string {
+	return "Invalid input: " + e.desc
 }
 
-func (d *BlockDecoder) Reset() {
-	d.i = 0
-	d.j = 0
-	d.endOfBlock = false
-}
-
-func (d *BlockDecoder) DecompressBlock(blockLen int) (n int, err error) {
-	for !d.endOfBlock {
-		err = d.DecodeSequence(blockLen)
-		if err != nil {
-			return -1, err
+func DecompressBlock2(in, out []byte) (n int, err error) {
+	var i, j, lLen, mLen, mOfft int
+	for i < len(in) {
+		lLen = int(in[i] >> 4)
+		mLen = int(in[i]&0xf) + 4
+		if i++; lLen != 0 {
+			if lLen == 15 {
+				for i < len(in) {
+					lLen += int(in[i])
+					if i++; in[i-1] != 255 {
+						break
+					}
+				}
+				if len(in) < lLen { // could not be greater then block len
+					return -1, &InvalidInput{"literals len > block len"}
+				}
+			}
+			if n = copy(out[j:], in[i:i+lLen]); n != lLen {
+				return -1, &InvalidInput{"insufficient buffer"}
+			}
+			i += lLen
+			j += lLen
 		}
-	}
-	return d.j, nil
-}
-
-func (d *BlockDecoder) DecodeSequence(blockLen int) error {
-	var n int
-	// jinitial := d.j
-	// log.Printf("token: %02x", d.in[d.i])
-	lLen := int(d.in[d.i] >> 4)
-	mLen := int(d.in[d.i]&0xf) + 4
-	d.i++
-	if lLen == 15 {
-		for ; d.in[d.i] == 255 && d.i < len(d.in); d.i++ {
-			// log.Printf("lLen : %02x", d.in[d.i])
-			lLen += 255
+		if i == len(in) { // EOF reached
+			return j, nil
 		}
-		lLen += int(d.in[d.i])
-		// log.Printf("lLen : %02x", d.in[d.i])
-		if lz4MB < lLen { // could not be greater then max block len
-			return fmt.Errorf("DecompressSequence: malformed input")
+		mOfft = int(in[i]) | int(in[i+1])<<8
+		if i += 2; j < mOfft {
+			return -1, &InvalidInput{"match offset otside buffer"}
 		}
-		d.i++
-	}
-	// log.Printf("copy %d literals", lLen)
-	if lLen != 0 {
-		n = copy(d.out[d.j:], d.in[d.i:d.i+lLen])
-		if n != lLen {
-			return fmt.Errorf("DecompressSequence: buffer is too small")
+		if mLen == 19 {
+			for i < len(in) {
+				mLen += int(in[i])
+				if i++; in[i-1] != 255 {
+					break
+				}
+			}
+			if lz4MB < lLen { // could not be greater then max block len
+				return -1, &InvalidInput{"match len > block len"}
+			}
 		}
-		d.i += lLen
-		d.j += lLen
-	}
-
-	// log.Printf("current pos %d/%d", d.i, blockLen)
-	if d.i == blockLen { // EOF reached
-		d.endOfBlock = true
-		return nil
-	}
-	// log.Printf("mOfft: %02x%02x", d.in[d.i], d.in[d.i+1])
-	mOfft := int(d.in[d.i]) | int(d.in[d.i+1])<<8
-	// log.Printf("match offset: %d", mOfft)
-	if d.j < mOfft {
-		return fmt.Errorf("DecompressSequence: malformed input")
-	}
-	d.i += 2
-	if mLen == 19 {
-		for ; d.in[d.i] == 255 && d.i < len(d.in); d.i++ {
-			// log.Printf("mLen : %02x", d.in[d.i])
-			mLen += 255
+		for ; mOfft < mLen; mLen -= mOfft {
+			if n = copy(out[j:], out[j-mOfft:j]); n != mOfft {
+				return -1, &InvalidInput{"insufficient buffer"}
+			}
+			j += mOfft
 		}
-		// log.Printf("mLen : %02x", d.in[d.i])
-		mLen += int(d.in[d.i])
-		if lz4MB < mLen { // could not be greater then max block len
-			return fmt.Errorf("DecompressSequence: malformed input")
+		if n = copy(out[j:], out[j-mOfft:j-mOfft+mLen]); n != mLen {
+			return -1, &InvalidInput{"insufficient buffer"}
 		}
-		d.i++
+		j += mLen
 	}
-	for mOfft < mLen {
-		// log.Printf("match copy %d literals at offt %d partial", mOfft, mOfft)
-		n = copy(d.out[d.j:], d.out[d.j-mOfft:d.j])
-		if n != mOfft {
-			return fmt.Errorf("DecompressSequence: buffer is too small")
-		}
-		mLen -= mOfft
-		d.j += n
-	}
-	// log.Printf("match copy %d literals at offt %d", mLen, mOfft)
-	n = copy(d.out[d.j:], d.out[d.j-mOfft:d.j-mOfft+mLen])
-	if n != mLen {
-		return fmt.Errorf("DecompressSequence: buffer is too small")
-	}
-	d.j += mLen
-	// fmt.Fprintln(os.Stderr, hex.Dump(d.out[jinitial:d.j]))
-	return nil
+	return j, nil
 }

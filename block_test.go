@@ -75,8 +75,7 @@ func TestDecompressBlock(t *testing.T) {
 func TestDecompressBlockNew(t *testing.T) {
 	var block = testLoremLZ4[11:432]
 	out := make([]byte, len(testLoremTXT))
-	d := NewBlockDecoder(block, out)
-	n, err := d.DecompressBlock(len(block))
+	n, err := DecompressBlock2(block, out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,12 +153,10 @@ func BenchmarkDecompressBlock(b *testing.B) {
 
 func BenchmarkDecompressBlockNew(b *testing.B) {
 	out := make([]byte, len(testLoremTXT))
-	d := NewBlockDecoder(testLoremLZ4[11:432], out)
 	for i := 0; i < b.N; i++ {
-		_, err := d.DecompressBlock(421)
+		_, err := DecompressBlock2(testLoremLZ4[11:432], out)
 		if err != nil {
 			b.Fatal(err)
 		}
-		d.Reset()
 	}
 }
