@@ -9,10 +9,137 @@ package lz4
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
+	"encoding/hex"
 	"testing"
 )
+
+func TestDecompressBlockOK(t *testing.T) {
+	tt := []struct {
+		name     string
+		seq      []byte
+		expected []byte
+	}{
+		{
+			name:     "minimal last sequence",
+			seq:      []byte{0x10, 0x01},
+			expected: []byte{0x01},
+		},
+		{
+			name:     "overlapping match",
+			seq:      []byte{0x42, 0x01, 0x02, 0x03, 0x04, 0x04, 0x00},
+			expected: []byte{0x01, 0x02, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04, 0x01, 0x02},
+		},
+		{
+			name:     "normal match",
+			seq:      []byte{0x40, 0x01, 0x02, 0x03, 0x04, 0x04, 0x00},
+			expected: []byte{0x01, 0x02, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04},
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			out := make([]byte, len(tc.expected))
+			n, err := DecompressBlock(tc.seq, out)
+			if err != nil {
+				t.Fatalf("Failed to decompress block: %v", err)
+			}
+			if 0 != bytes.Compare(out[:n], tc.expected) {
+				t.Errorf(
+					"Decompressed block mismatch\n      got: %s\n expected: %s",
+					hex.EncodeToString(out[:n]),
+					hex.EncodeToString(tc.expected),
+				)
+			}
+		})
+	}
+}
+
+func TestDecompressBlockErr(t *testing.T) {
+	tt := []struct {
+		name   string
+		seq    []byte
+		outLen int
+	}{
+		{
+			name:   "not enough bytes for literals len",
+			seq:    []byte{0xf0},
+			outLen: 10,
+		},
+		{
+			name:   "not enough literals",
+			seq:    []byte{0x40, 0x01},
+			outLen: 10,
+		},
+		{
+			name:   "not enough bytes for match offset",
+			seq:    []byte{0x40, 0x01, 0x02, 0x03, 0x04, 0x00},
+			outLen: 10,
+		},
+		{
+			name:   "output buffer is too smal for literals",
+			seq:    []byte{0x40, 0x01, 0x02, 0x03, 0x04},
+			outLen: 3,
+		},
+		{
+			name:   "match offset outside out buffer",
+			seq:    []byte{0x40, 0x01, 0x02, 0x03, 0x04, 0x08, 0x00},
+			outLen: 10,
+		},
+		{
+			name:   "not enough bytes for match len",
+			seq:    []byte{0x4f, 0x01, 0x02, 0x03, 0x04, 0x04, 0x00, 0xaa},
+			outLen: 10,
+		},
+		{
+			name:   "out buffer is too small for overlapping match",
+			seq:    []byte{0x40, 0x01, 0x02, 0x03, 0x04, 0x02, 0x00},
+			outLen: 7,
+		},
+		{
+			name:   "out buffer is too small for match",
+			seq:    []byte{0x40, 0x01, 0x02, 0x03, 0x04, 0x04, 0x00},
+			outLen: 7,
+		},
+	}
+	for _, tc := range tt {
+		t.Run(tc.name, func(t *testing.T) {
+			out := make([]byte, tc.outLen)
+			_, err := DecompressBlock(tc.seq, out)
+			if err == nil {
+				t.Fatalf("Expecected an error, got nil!")
+			}
+		})
+	}
+}
+
+func TestDecompressLorem(t *testing.T) {
+	var block = testLoremLZ4[11:432]
+	out := make([]byte, len(testLoremTXT))
+	n, err := DecompressBlock(block, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(testLoremTXT) {
+		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), n)
+	}
+	if string(out) != testLoremTXT {
+		t.Errorf(
+			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
+			testLoremTXT,
+			string(out),
+		)
+	}
+}
+
+func BenchmarkDecompressLorem(b *testing.B) {
+	var block = testLoremLZ4[11:432]
+	out := make([]byte, len(testLoremTXT))
+	for i := 0; i < b.N; i++ {
+		_, err := DecompressBlock(block, out)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
 
 var testLoremLZ4 = []byte{
 	0x04, 0x22, 0x4d, 0x18, // magic
@@ -51,112 +178,5 @@ var testLoremLZ4 = []byte{
 	0x00, 0x00, 0x00, 0x00, // EndMark
 	0x59, 0xca, 0x9c, 0x7e, // ContentChecksum
 }
+
 var testLoremTXT = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n"
-
-func TestDecompressBlock(t *testing.T) {
-	var block = testLoremLZ4[11:432]
-	out := make([]byte, len(testLoremTXT))
-	n, err := DecompressBlock(block, out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != len(testLoremTXT) {
-		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), n)
-	}
-	if string(out) != testLoremTXT {
-		t.Errorf(
-			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
-			testLoremTXT,
-			string(out),
-		)
-	}
-}
-
-func TestDecompressBlockNew(t *testing.T) {
-	var block = testLoremLZ4[11:432]
-	out := make([]byte, len(testLoremTXT))
-	n, err := DecompressBlock2(block, out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != len(testLoremTXT) {
-		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), n)
-	}
-	if string(out) != testLoremTXT {
-		t.Errorf(
-			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
-			testLoremTXT,
-			string(out),
-		)
-	}
-}
-
-func TestDecompress(t *testing.T) {
-	r := bytes.NewReader(testLoremLZ4)
-	w := new(bytes.Buffer)
-	d := NewDecompressor()
-	err := d.Decompress(r, w)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w.Len() != len(testLoremTXT) {
-		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), w.Len())
-	}
-	if w.String() != testLoremTXT {
-		t.Errorf(
-			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
-			testLoremTXT,
-			w.String(),
-		)
-	}
-}
-
-func TestDecompressMultiblock(t *testing.T) {
-	f, err := os.Open("war-and-peace.txt.lz4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	f2, err := os.Create("war-and-peace2.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f2.Close()
-	d := NewDecompressor()
-	err = d.Decompress(f, f2)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func BenchmarkDecompress(b *testing.B) {
-	d := NewDecompressor()
-	for i := 0; i < b.N; i++ {
-		r := bytes.NewReader(testLoremLZ4)
-		err := d.Decompress(r, ioutil.Discard)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkDecompressBlock(b *testing.B) {
-	var block = testLoremLZ4[11:432]
-	out := make([]byte, len(testLoremTXT))
-	for i := 0; i < b.N; i++ {
-		_, err := DecompressBlock(block, out)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkDecompressBlockNew(b *testing.B) {
-	out := make([]byte, len(testLoremTXT))
-	for i := 0; i < b.N; i++ {
-		_, err := DecompressBlock2(testLoremLZ4[11:432], out)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
