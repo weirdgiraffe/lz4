@@ -85,6 +85,11 @@ func TestDecompressBlockErr(t *testing.T) {
 			outLen: 10,
 		},
 		{
+			name:   "null match offset",
+			seq:    []byte{0x40, 0x01, 0x02, 0x03, 0x04, 0x00, 0x00},
+			outLen: 7,
+		},
+		{
 			name:   "not enough bytes for match len",
 			seq:    []byte{0x4f, 0x01, 0x02, 0x03, 0x04, 0x04, 0x00, 0xaa},
 			outLen: 10,

@@ -52,7 +52,7 @@ func DecompressBlock(in, out []byte, seqCount int) (i, j int, err error) {
 			return istart, jstart, &InvalidInput{"malformed input: match offset"}
 		}
 		mOfft = int(in[i]) | int(in[i+1])<<8
-		if i += 2; j < mOfft {
+		if i += 2; j < mOfft || mOfft == 0 {
 			return istart, jstart, &InvalidInput{"malformed input: match offset"}
 		}
 		if mLen == 19 {
