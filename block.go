@@ -7,7 +7,7 @@
 
 package lz4
 
-const maxBlockSize = 4 << 10
+const AllSequences = -1
 
 type InvalidInput struct {
 	desc string
@@ -17,9 +17,13 @@ func (e InvalidInput) Error() string {
 	return "Invalid input: " + e.desc
 }
 
-func DecompressBlock(in, out []byte) (n int, err error) {
-	var i, j, lLen, mLen, mOfft int
-	for i < len(in) {
+// DecompressBlock decompress at least seqCount sequences from lz4 compressed block
+// return offsets in input and output buffers after last successfuly decompressed sequence
+func DecompressBlock(in, out []byte, seqCount int) (i, j int, err error) {
+	var n, lLen, mLen, mOfft, seq int
+	for i < len(in) && (seqCount < 0 || seq < seqCount) {
+		istart := i
+		jstart := j
 		lLen = int(in[i] >> 4)
 		mLen = int(in[i]&0xf) + 4
 		i++
@@ -33,24 +37,23 @@ func DecompressBlock(in, out []byte) (n int, err error) {
 				}
 			}
 			if i == len(in) || i+lLen > len(in) {
-				return -1, &InvalidInput{"malformed input: literals len"}
+				return istart, jstart, &InvalidInput{"malformed input: literals len"}
 			}
 			if n = copy(out[j:], in[i:i+lLen]); n != lLen {
-				return -1, &InvalidInput{"could not copy literals"}
+				return istart, jstart, &InvalidInput{"could not copy literals"}
 			}
 			i += lLen
 			j += lLen
 		}
-
 		if i == len(in) { // reached end of block
-			return j, nil
+			return i, j, nil
 		}
 		if i+1 == len(in) {
-			return -1, &InvalidInput{"malformed input: match offset"}
+			return istart, jstart, &InvalidInput{"malformed input: match offset"}
 		}
 		mOfft = int(in[i]) | int(in[i+1])<<8
 		if i += 2; j < mOfft {
-			return -1, &InvalidInput{"malformed input: match offset"}
+			return istart, jstart, &InvalidInput{"malformed input: match offset"}
 		}
 		if mLen == 19 {
 			for i < len(in) {
@@ -62,14 +65,15 @@ func DecompressBlock(in, out []byte) (n int, err error) {
 		}
 		for ; mOfft < mLen; mLen -= mOfft {
 			if n = copy(out[j:], out[j-mOfft:j]); n != mOfft {
-				return -1, &InvalidInput{"could not copy match"}
+				return istart, jstart, &InvalidInput{"could not copy match"}
 			}
 			j += mOfft
 		}
 		if n = copy(out[j:], out[j-mOfft:j-mOfft+mLen]); n != mLen {
-			return -1, &InvalidInput{"could not copy match"}
+			return istart, jstart, &InvalidInput{"could not copy match"}
 		}
 		j += mLen
+		seq++
 	}
-	return j, nil
+	return i, j, nil
 }

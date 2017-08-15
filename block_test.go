@@ -38,7 +38,7 @@ func TestDecompressBlockOK(t *testing.T) {
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
 			out := make([]byte, len(tc.expected))
-			n, err := DecompressBlock(tc.seq, out)
+			_, n, err := DecompressBlock(tc.seq, out, AllSequences)
 			if err != nil {
 				t.Fatalf("Failed to decompress block: %v", err)
 			}
@@ -103,7 +103,7 @@ func TestDecompressBlockErr(t *testing.T) {
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
 			out := make([]byte, tc.outLen)
-			_, err := DecompressBlock(tc.seq, out)
+			_, _, err := DecompressBlock(tc.seq, out, AllSequences)
 			if err == nil {
 				t.Fatalf("Expecected an error, got nil!")
 			}
@@ -114,7 +114,7 @@ func TestDecompressBlockErr(t *testing.T) {
 func TestDecompressLorem(t *testing.T) {
 	var block = testLoremLZ4[11:432]
 	out := make([]byte, len(testLoremTXT))
-	n, err := DecompressBlock(block, out)
+	_, n, err := DecompressBlock(block, out, AllSequences)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func BenchmarkDecompressLorem(b *testing.B) {
 	var block = testLoremLZ4[11:432]
 	out := make([]byte, len(testLoremTXT))
 	for i := 0; i < b.N; i++ {
-		_, err := DecompressBlock(block, out)
+		_, _, err := DecompressBlock(block, out, AllSequences)
 		if err != nil {
 			b.Fatal(err)
 		}
