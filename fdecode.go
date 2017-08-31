@@ -18,7 +18,7 @@ import (
 type BlockDecoder struct {
 	r     io.Reader
 	frame *FrameDesc
-	buf   *BlockBuffer
+	buf   *blockBuffer
 }
 
 func NewBlockDecoder(r io.Reader) (*BlockDecoder, error) {
@@ -38,7 +38,7 @@ func NewBlockDecoder(r io.Reader) (*BlockDecoder, error) {
 		return nil, err
 	}
 
-	d.buf = NewBlockBuffer(d.frame.BlockMaxSize)
+	d.buf = newBlockBuffer(d.frame.BlockMaxSize)
 	return d, nil
 }
 
@@ -78,19 +78,19 @@ func (d *BlockDecoder) SkipBlock() error {
 	return nil
 }
 
-type BlockBuffer struct {
+type blockBuffer struct {
 	Buf        []byte
 	Len        int
 	Compressed bool
 }
 
-func NewBlockBuffer(size int) *BlockBuffer {
-	return &BlockBuffer{
+func newBlockBuffer(size int) *blockBuffer {
+	return &blockBuffer{
 		Buf: make([]byte, size),
 	}
 }
 
-func (b *BlockBuffer) Fill(r io.Reader, len uint32) (err error) {
+func (b *blockBuffer) Fill(r io.Reader, len uint32) (err error) {
 	b.Len, err = r.Read(b.Buf[:len])
 	if err != nil {
 		b.Len = 0
@@ -99,20 +99,20 @@ func (b *BlockBuffer) Fill(r io.Reader, len uint32) (err error) {
 	return nil
 }
 
-func (b *BlockBuffer) Bytes() []byte {
+func (b *blockBuffer) Bytes() []byte {
 	return b.Buf[:b.Len]
 }
 
-func (b *BlockBuffer) Reset() {
+func (b *blockBuffer) Reset() {
 	b.Len = 0
 	b.Compressed = false
 }
 
-func (b *BlockBuffer) Checksum32() uint32 {
+func (b *blockBuffer) Checksum32() uint32 {
 	return xxhash.Checksum32(b.Buf[:b.Len])
 }
 
-func (b *BlockBuffer) Empty() bool {
+func (b *blockBuffer) Empty() bool {
 	return b.Len == 0
 }
 
@@ -121,9 +121,10 @@ func (d *BlockDecoder) readBlock() (err error) {
 	if err != nil {
 		return err
 	}
-
 	d.buf.Compressed = u&0x80000000 == 0
-	err = d.buf.Fill(d.r, u&0x7fffffff)
+	bLen := u & 0x7fffffff
+
+	err = d.buf.Fill(d.r, bLen)
 	if err != nil {
 		return err
 	}
