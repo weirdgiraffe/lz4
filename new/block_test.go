@@ -1,16 +1,10 @@
-//
-// block_test.go
-// Copyright (C) 2017 weirdgiraffe <giraffe@cyberzoo.xyz>
-//
-// Distributed under terms of the MIT license.
-//
-
-package lz4
+package new
 
 import (
 	"bytes"
-	"io/ioutil"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 var testLoremLZ4 = []byte{
@@ -54,61 +48,21 @@ var testLoremTXT = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed
 
 func TestDecompressBlock(t *testing.T) {
 	var block = testLoremLZ4[11:432]
-	out := make([]byte, len(testLoremTXT))
-	n, err := DecompressBlock(block, out)
+	out := new(bytes.Buffer)
+	err := uncompressBlock(block, out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != len(testLoremTXT) {
-		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), n)
-	}
-	if string(out) != testLoremTXT {
-		t.Errorf(
-			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
-			testLoremTXT,
-			string(out),
-		)
-	}
-}
-
-func TestDecompress(t *testing.T) {
-	r := bytes.NewReader(testLoremLZ4)
-	w := new(bytes.Buffer)
-	d := NewDecompressor()
-	err := d.Decompress(r, w)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w.Len() != len(testLoremTXT) {
-		t.Errorf("Decompressed len mismatch %d != %d", len(testLoremTXT), w.Len())
-	}
-	if w.String() != testLoremTXT {
-		t.Errorf(
-			"Deompressed content not match expectations\nExpected\n'%s'\nHave\n'%s'\n",
-			testLoremTXT,
-			w.String(),
-		)
-	}
-}
-
-func BenchmarkDecompress(b *testing.B) {
-	d := NewDecompressor()
-	compressed, _ := ioutil.ReadFile("encoded.lz4")
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		r := bytes.NewReader(compressed)
-		err := d.Decompress(r, ioutil.Discard)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
+	assert.Equal(t, testLoremTXT, out.String(), "unexpected uncompressed text")
 }
 
 func BenchmarkDecompressBlock(b *testing.B) {
 	var block = testLoremLZ4[11:432]
-	out := make([]byte, len(testLoremTXT))
+	out := new(bytes.Buffer)
+	out.Grow(len(testLoremTXT))
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		DecompressBlock(block, out)
+		out.Reset()
+		uncompressBlock(block, out)
 	}
 }
