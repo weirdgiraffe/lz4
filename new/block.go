@@ -64,3 +64,67 @@ func uncompressBlock(in []byte, out *bytes.Buffer) (err error) {
 	}
 	return nil
 }
+
+func decompressBlock(in, out []byte, offt int) (err error) {
+	var i, ll, ml, mo, n int
+	// fmt.Printf("- 1) uncompress block of size %d with %d/%d bytes in out buffer\n", len(in), offt, len(out))
+	for {
+		// read the token and set initial length for literals and match
+		ll, ml = int(in[i]&0xf0>>4), int(in[i]&0x0f)+4
+		i++
+		// fmt.Printf("- 2) literals len = %d ; match len = %d ; position %d/%d\n", ll, ml, i, len(in))
+		// read rest of the literals length
+		if ll == 0x0f {
+			for ; i < len(in); i++ {
+				ll += int(in[i])
+				if in[i] != 255 {
+					i++
+					break
+				}
+			}
+		}
+
+		if ll > len(in)-i {
+			return fmt.Errorf("invalid source")
+		}
+
+		// fmt.Printf("- - 3) adjusted literals len = %d ; position %d/%d\n", ll, i, len(in))
+		// copy literals
+		if ll != 0 {
+			if n = copy(out[offt:], in[i:i+ll]); n != ll {
+				return fmt.Errorf("literals copy error")
+			}
+			i += ll
+			offt += ll
+		}
+
+		// fmt.Printf("- - 4) copied %d, now we have %d in out; position %d/%d\n", ll, offt, i, len(in))
+		// check if we have processed the whole block
+		if i == len(in) {
+			return nil
+		}
+		// read match offset
+		mo = offt - (int(in[i]) | int(in[i+1])<<8)
+		i += 2
+		// fmt.Printf("- - 5) match offset %d/%d ; position %d/%d\n", mo, len(out), i, len(in))
+		if mo < 0 {
+			return fmt.Errorf("invalid match offset")
+		}
+		// read rest of the match length
+		if ml == 19 {
+			for ; i < len(in) && in[i] == 255; i++ {
+				ml += 255
+			}
+			ml += int(in[i])
+			i++
+		}
+		// fmt.Printf("- - 6) asusted match len = %d ; postion %d/%d\n", ml, i, len(in))
+		// copy match
+		if n = copy(out[offt:], out[mo:mo+ml]); n != ml {
+			return fmt.Errorf("match copy error")
+		}
+		offt += ml
+		// fmt.Printf("- - 7) copied %d, now we have %d in out ; postion %d/%d\n", ml, offt, i, len(in))
+	}
+	return nil
+}

@@ -56,6 +56,16 @@ func TestDecompressBlock(t *testing.T) {
 	assert.Equal(t, testLoremTXT, out.String(), "unexpected uncompressed text")
 }
 
+func TestDecompressBlock2(t *testing.T) {
+	var block = testLoremLZ4[11:432]
+	out := make([]byte, len(testLoremTXT))
+	err := decompressBlock(block, out, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, testLoremTXT, string(out), "unexpected uncompressed text")
+}
+
 func BenchmarkDecompressBlock(b *testing.B) {
 	var block = testLoremLZ4[11:432]
 	out := new(bytes.Buffer)
@@ -64,5 +74,15 @@ func BenchmarkDecompressBlock(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		out.Reset()
 		uncompressBlock(block, out)
+	}
+}
+
+func BenchmarkDecompressBlock2(b *testing.B) {
+	block := testLoremLZ4[11:432]
+	out := make([]byte, len(testLoremTXT))
+	b.SetBytes(int64(len(block)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		decompressBlock(block, out, 0)
 	}
 }
